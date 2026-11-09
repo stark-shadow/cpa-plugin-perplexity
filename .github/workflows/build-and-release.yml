@@ -12,6 +12,7 @@ jobs:
   build:
     name: ${{ matrix.goos }}/${{ matrix.goarch }}
     runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.optional == true }}
     strategy:
       fail-fast: false
       matrix:
@@ -19,8 +20,11 @@ jobs:
           - {runner: ubuntu-latest, goos: linux, goarch: amd64, cc: gcc}
           - {runner: ubuntu-latest, goos: linux, goarch: arm64, cc: aarch64-linux-gnu-gcc}
           - {runner: ubuntu-latest, goos: windows, goarch: amd64, cc: x86_64-w64-mingw32-gcc}
-          - {runner: macos-latest, goos: darwin, goarch: arm64, cc: clang}
-          - {runner: macos-latest, goos: darwin, goarch: amd64, cc: clang}
+          # macOS minutes are metered and the hosted runners can sit queued for a
+          # long time on a fresh account. Marked optional so an unavailable macOS
+          # runner never blocks a release for the platforms people actually use.
+          - {runner: macos-latest, goos: darwin, goarch: arm64, cc: clang, optional: true}
+          - {runner: macos-latest, goos: darwin, goarch: amd64, cc: clang, optional: true}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -50,13 +54,16 @@ jobs:
 
   release:
     needs: build
+    # Publish whatever succeeded: a missing optional platform must not block the rest.
+    if: always() && startsWith(github.ref, 'refs/tags/v') && !cancelled()
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: release-assets
           merge-multiple: true
+      - name: List collected assets
+        run: ls -l release-assets
       - name: Checksums
         working-directory: release-assets
         run: for f in ./*.zip; do sha256sum "$f" | sed "s|  \./|  |"; done > checksums.txt
