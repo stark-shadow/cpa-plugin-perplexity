@@ -1,0 +1,20 @@
+{
+  "date": "2026-11-09",
+  "platform": "linux/amd64",
+  "scope": "hermetic fake-host acceptance; not live Perplexity acceptance",
+  "live_account": "not_run",
+  "cases": [
+    {"case": "register", "status": "pass", "evidence": ["TestRegistrationAndDispatch", "TestRPCSafety", "TestSDKRPCResponseShapes", "acceptance/abi_smoke.py"], "live": "not_run"},
+    {"case": "config", "status": "pass", "evidence": ["TestStrictConfig", "TestRegistrationAndDispatch", "acceptance/abi_smoke.py"], "live": "not_run"},
+    {"case": "import", "status": "pass", "evidence": ["TestCredentialParsing", "TestManagementImportStatusAndRefresh", "TestExpiredSessionAndTransportFailures"], "live": "not_run"},
+    {"case": "model_list", "status": "pass", "evidence": ["TestCatalogMapping", "TestCatalogCacheAndFallback", "TestSDKRPCResponseShapes", "acceptance/abi_smoke.py"], "live": "not_run"},
+    {"case": "non_stream_answer", "status": "pass", "evidence": ["TestExecuteCompletion", "TestNonStreamFailuresAndClassification", "TestPromptFlatteningAndCount", "TestSDKRPCResponseShapes"], "live": "not_run"},
+    {"case": "stream_answer", "status": "pass", "evidence": ["TestSSEAccumulation", "TestStreamingDeltas", "TestStreamFailures", "TestShutdownCancelsPumpAndRecoversPanic", "TestQuiesceDrainsUnaryRPC"], "live": "not_run"},
+    {"case": "quota", "status": "pass", "evidence": ["TestQuotaNormalizationAndFetch", "TestSDKRPCResponseShapes"], "live": "not_run"}
+  ],
+  "additional_checks": [
+    {"case": "release_packaging", "status": "pass", "evidence": ["TestReleaseMetadataAndPackaging", "build.sh", "ZIP root inspection"]},
+    {"case": "concurrency_and_cancellation", "status": "pass", "evidence": ["TestConcurrencyLimitAndCancellation", "TestTransportOperationCancellation", "TestQuiesceDrainsUnaryRPC"]},
+    {"case": "native_abi", "status": "pass", "evidence": ["acceptance/abi_smoke.py", "nm -D --defined-only", "file"]}
+  ]
+}
