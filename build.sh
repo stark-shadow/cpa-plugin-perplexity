@@ -33,9 +33,9 @@ cp -f "dist/${ID}_${VERSION}_${GOOS_TARGET}_${GOARCH_TARGET}.zip" dist/artifacts
 (
   cd dist/artifacts
   if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum ./*.zip > checksums.txt
+    for f in ./*.zip; do sha256sum "$f" | sed "s|  \./|  |"; done > checksums.txt
   else
-    shasum -a 256 ./*.zip > checksums.txt
+    for f in ./*.zip; do shasum -a 256 "$f" | sed "s|  \./|  |"; done > checksums.txt
   fi
   cat checksums.txt
 )

@@ -55,7 +55,9 @@ jobs:
           merge-multiple: true
       - name: Checksums
         working-directory: release-assets
-        run: sha256sum ./*.zip > checksums.txt
+        # Bare file names only: the core plugin store looks the archive up by
+        # name and does not strip a leading "./" from a sha256sum line.
+        run: for f in ./*.zip; do sha256sum "$f" | sed "s|  \./|  |"; done > checksums.txt
       - uses: softprops/action-gh-release@v2
         with:
           files: release-assets/*
