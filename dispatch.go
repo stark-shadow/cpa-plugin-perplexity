@@ -10,7 +10,7 @@ import (
 
 const (
 	pluginID      = "perplexity"
-	pluginVersion = "1.1.1"
+	pluginVersion = "1.1.2"
 	pluginRepo    = "https://github.com/stark-shadow/cpa-plugin-perplexity"
 	maxRPCPayload = 1 << 20
 )

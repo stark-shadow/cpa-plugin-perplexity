@@ -57,7 +57,7 @@ func TestReleaseMetadataAndPackaging(t *testing.T) {
 	if err = os.WriteFile(filepath.Join(stage, "extension", "manifest.json"), []byte(`{"manifest_version":3}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	target := filepath.Join(dir, "perplexity_1.1.1_linux_amd64.zip")
+	target := filepath.Join(dir, "perplexity_1.1.2_linux_amd64.zip")
 	if output, runErr := exec.Command("python3", "package.py", stage, target).CombinedOutput(); runErr != nil {
 		t.Fatalf("packaging failed: %s", output)
 	}
