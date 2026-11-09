@@ -50,11 +50,15 @@ async function poll() {
   if (polling || completed || !state || !byId("key").value.trim()) return;
   polling = true;
   try {
-    const response = await fetch("/v0/management/plugins/perplexity/auth/login/poll?state=" + encodeURIComponent(state),{headers:{Authorization:"Bearer " + byId("key").value.trim()},credentials:"same-origin",cache:"no-store"});
+    // The core, not this plugin, owns the CPA OAuth session: only
+    // /v8/management/oauth/status saves the credential and returns "ok". Polling the
+    // plugin route would report success while nothing was persisted.
+    const response = await fetch("/v8/management/oauth/status?state=" + encodeURIComponent(state),{headers:{Authorization:"Bearer " + byId("key").value.trim()},credentials:"same-origin",cache:"no-store"});
     if (!response.ok) { byId("message").textContent = "请检查 CPA 管理密钥；状态查询需要管理认证。";return; }
     const result = await response.json();
-    if (result.status === "success") connected(result.email);
-    if (result.status === "error") { clearInterval(interval);byId("capture").disabled = true;byId("message").textContent = "登录已过期或插件已重启，请从 CPA 重新发起登录。"; }
+    if (result.status === "ok") connected("");
+    if (result.status === "wait") { byId("message").textContent = "等待捕获会话…"; return; }
+    if (result.status === "error") { clearInterval(interval);byId("capture").disabled = true;byId("message").textContent = (result.error || "登录已过期或插件已重启，请从 CPA 重新发起登录。"); }
   } catch (_) { byId("message").textContent = "暂时无法连接 CPA，正在重试…"; }
   finally { polling = false; }
 }
