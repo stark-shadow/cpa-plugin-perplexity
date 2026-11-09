@@ -30,7 +30,7 @@ reverse engineering: see [LOGIN-EVIDENCE.md](LOGIN-EVIDENCE.md).
 Executed locally, hermetically (no live account or upstream HTTP):
 
 - `export PATH=$HOME/.local/go/bin:$PATH; bash build.sh`: full `go test -race -v
-  ./...` reports `PASS` / `ok github.com/lzt404/cpa-plugin-perplexity`, then builds
+  ./...` reports `PASS` / `ok github.com/stark-shadow/cpa-plugin-perplexity`, then builds
   and packages **v1.1.0 linux/amd64**, exit **0**.
 - `node --test extension/tests/*.test.cjs`: 15 passing fake-browser/VM tests,
   covering cookie selection, state association, host/frame rejection, persisted
@@ -137,7 +137,7 @@ timeouts, quota with/without denominators, management routes/resources, SDK wire
 response shapes, shutdown/panic recovery, concurrency and exact ZIP membership.
 
 The successful test output ends with `PASS` and
-`ok github.com/lzt404/cpa-plugin-perplexity`; no race report is emitted.
+`ok github.com/stark-shadow/cpa-plugin-perplexity`; no race report is emitted.
 
 Exact library build command (exit **0**):
 

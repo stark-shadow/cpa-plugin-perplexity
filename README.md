@@ -1,7 +1,7 @@
 # Perplexity — a CLIProxyAPI native provider plugin
 
 Expose a signed-in **Perplexity web** session through CPA's OpenAI-compatible chat API.
-This is a standalone personal repository, `github.com/lzt404/cpa-plugin-perplexity`.
+This is a standalone personal repository, `github.com/stark-shadow/cpa-plugin-perplexity`.
 It is not the Perplexity API (Sonar) and does not use API keys or browser OAuth.
 
 ## Features and limits

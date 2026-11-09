@@ -2,7 +2,7 @@
 
 A CLIProxyAPI (CPA) native plugin that exposes **Perplexity web (perplexity.ai)** as an
 OpenAI-compatible provider. It is a *standalone plugin repository* on the personal
-account: `github.com/lzt404/cpa-plugin-perplexity`. It is **not** part of
+account: `github.com/stark-shadow/cpa-plugin-perplexity`. It is **not** part of
 EasyCLIProxyAPI and not part of any `router-for-me` repo.
 
 Read `/tmp/omc-ref/go/` (upstream plugin `omc-workbuddy-oauth`) as the reference for
@@ -29,18 +29,18 @@ quota.go           /rest/rate-limit/all + /rest/user/settings -> normalized quot
 management.go      authenticated management routes + browser panel resources
 state.go           auth file persistence helpers
 policy_test.go     unit tests for dispatch, config, sse parsing, model mapping
-go.mod             module github.com/lzt404/cpa-plugin-perplexity
+go.mod             module github.com/stark-shadow/cpa-plugin-perplexity
 manifest.json | build.sh | package.py | Makefile | README.md | README.zh-CN.md | LICENSE
 acceptance/REPORT.md | acceptance/matrix.json
 .github/workflows/build-and-release.yml
 ```
 
 IDs: plugin id `perplexity`, provider/credential key `perplexity`, dynamic library
-`perplexity.so`. Module path `github.com/lzt404/cpa-plugin-perplexity`.
+`perplexity.so`. Module path `github.com/stark-shadow/cpa-plugin-perplexity`.
 Pin SDK: newest published tag of `github.com/router-for-me/CLIProxyAPI/v8`
 (currently v8.0.59; verify with `go list -m -versions`). `manifest.json`
 schema_version 10, abi_version 1, author `lzt404`,
-repository `https://github.com/lzt404/cpa-plugin-perplexity`.
+repository `https://github.com/stark-shadow/cpa-plugin-perplexity`.
 
 `go` is at `$HOME/.local/go/bin/go` in a non-login SSH shell.
 

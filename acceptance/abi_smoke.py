@@ -110,7 +110,7 @@ def main() -> None:
         assert not response["ok"] and response["error"]["http_status"] == 400
     response = invoke("plugin.register", b"{}" + b" " * ((1 << 20) - 2))
     assert response["ok"] and response["result"]["schema_version"] == 10
-    assert response["result"]["metadata"]["Author"] == "lzt404"
+    assert response["result"]["metadata"]["Author"] == "stark-shadow"
     for yaml in ("unknown_field: true", "language: en\n---\n{}", "{}\n---\n"):
         request = json.dumps({"config_yaml": base64.b64encode(yaml.encode()).decode()}).encode()
         response = invoke("plugin.register", request)

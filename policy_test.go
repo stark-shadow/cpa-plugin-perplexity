@@ -192,7 +192,7 @@ func TestRegistrationAndDispatch(t *testing.T) {
 		Metadata      pluginapi.Metadata `json:"metadata"`
 		Capabilities  map[string]any     `json:"capabilities"`
 	}
-	if json.Unmarshal(envelope.Result, &result) != nil || result.SchemaVersion != pluginabi.SchemaVersion || result.Metadata.Author != "lzt404" || result.Metadata.GitHubRepository != pluginRepo {
+	if json.Unmarshal(envelope.Result, &result) != nil || result.SchemaVersion != pluginabi.SchemaVersion || result.Metadata.Author != "stark-shadow" || result.Metadata.GitHubRepository != pluginRepo {
 		t.Fatal("registration metadata mismatch")
 	}
 	for _, name := range []string{"auth_provider", "model_provider", "executor", "quota_provider", "management_api"} {

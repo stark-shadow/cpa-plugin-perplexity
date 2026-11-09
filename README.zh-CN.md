@@ -1,7 +1,7 @@
 # Perplexity — CLIProxyAPI 原生提供商插件
 
 将已登录的 **Perplexity 网页会话**接入 CPA 的 OpenAI 兼容聊天接口。
-独立个人仓库：`github.com/lzt404/cpa-plugin-perplexity`，并非 Sonar API，
+独立个人仓库：`github.com/stark-shadow/cpa-plugin-perplexity`，并非 Sonar API，
 不使用 API Key，也不伪造浏览器 OAuth 登录。
 
 ## 功能与限制

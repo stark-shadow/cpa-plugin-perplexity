@@ -11,7 +11,7 @@ import (
 const (
 	pluginID      = "perplexity"
 	pluginVersion = "1.1.1"
-	pluginRepo    = "https://github.com/lzt404/cpa-plugin-perplexity"
+	pluginRepo    = "https://github.com/stark-shadow/cpa-plugin-perplexity"
 	maxRPCPayload = 1 << 20
 )
 
@@ -210,7 +210,7 @@ func registration() any {
 		Capabilities  map[string]any     `json:"capabilities"`
 	}{
 		SchemaVersion: pluginabi.SchemaVersion,
-		Metadata:      pluginapi.Metadata{Name: "Perplexity", Version: pluginVersion, Author: "lzt404", GitHubRepository: pluginRepo, ConfigFields: fields},
+		Metadata:      pluginapi.Metadata{Name: "Perplexity", Version: pluginVersion, Author: "stark-shadow", GitHubRepository: pluginRepo, ConfigFields: fields},
 		Capabilities: map[string]any{"auth_provider": true, "model_provider": true, "executor": true,
 			"executor_model_scope": pluginapi.ExecutorModelScopeOAuth, "executor_input_formats": []string{"openai"}, "executor_output_formats": []string{"openai"}, "quota_provider": true, "management_api": true},
 	}

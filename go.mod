@@ -1,4 +1,4 @@
-module github.com/lzt404/cpa-plugin-perplexity
+module github.com/stark-shadow/cpa-plugin-perplexity
 
 go 1.26.10
 
