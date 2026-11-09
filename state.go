@@ -157,11 +157,23 @@ func saveCredential(ctx context.Context, callback hostCallbackFunc, cred credent
 	return name, nil
 }
 
+// catalogCacheDir keeps the catalog snapshot out of the credential directory
+// itself: CPA scans every top-level *.json in auth-dir as an auth file, so a
+// cache file there is loaded and reported as a broken credential. A subdirectory
+// is skipped by that scan.
+func catalogCacheDir(authDir string) string {
+	if authDir == "" {
+		return ""
+	}
+	return filepath.Join(authDir, ".perplexity-cache")
+}
+
 func readCatalogFile(dir, base string, ttl time.Duration) *catalogCache {
-	if dir == "" {
+	cacheDir := catalogCacheDir(dir)
+	if cacheDir == "" {
 		return nil
 	}
-	file, err := os.Open(filepath.Join(dir, ".perplexity-catalog.json"))
+	file, err := os.Open(filepath.Join(cacheDir, "catalog.json"))
 	if err != nil {
 		return nil
 	}
@@ -174,10 +186,14 @@ func readCatalogFile(dir, base string, ttl time.Duration) *catalogCache {
 }
 
 func writeCatalogFile(dir string, cache catalogCache) {
-	if dir == "" {
+	cacheDir := catalogCacheDir(dir)
+	if cacheDir == "" {
 		return
 	}
-	file, err := os.CreateTemp(dir, ".perplexity-catalog-*")
+	if err := os.MkdirAll(cacheDir, 0700); err != nil {
+		return
+	}
+	file, err := os.CreateTemp(cacheDir, "catalog-*")
 	if err != nil {
 		return
 	}
@@ -185,6 +201,6 @@ func writeCatalogFile(dir string, cache catalogCache) {
 	encodeErr := json.NewEncoder(file).Encode(cache)
 	closeErr := file.Close()
 	if encodeErr == nil && closeErr == nil {
-		_ = os.Rename(file.Name(), filepath.Join(dir, ".perplexity-catalog.json"))
+		_ = os.Rename(file.Name(), filepath.Join(cacheDir, "catalog.json"))
 	}
 }

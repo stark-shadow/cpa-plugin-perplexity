@@ -374,9 +374,14 @@ func TestCatalogCacheAndFallback(t *testing.T) {
 	if len(host.requests) != 1 {
 		t.Fatal("catalog not cached")
 	}
-	info, err := os.Stat(filepath.Join(dir, ".perplexity-catalog.json"))
+	// The snapshot must stay out of the credential directory: CPA treats every
+	// top-level *.json in auth-dir as an auth file.
+	info, err := os.Stat(filepath.Join(dir, ".perplexity-cache", "catalog.json"))
 	if err != nil || info.Mode().Perm() != 0600 {
 		t.Fatal("catalog not persisted privately")
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 || !entries[0].IsDir() {
+		t.Fatal("catalog cache must not add a top-level file to auth-dir")
 	}
 	second := testRuntime(t)
 	second.models(request.Host, "pro", "callback", host.call)
