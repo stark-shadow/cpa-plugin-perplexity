@@ -1,7 +1,7 @@
 {
   "id": "perplexity",
   "name": "Perplexity",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Perplexity web sessions as a text-only OpenAI-compatible provider, with streaming, model discovery, quota and cookie-import management.",
   "author": "lzt404",
   "repository": "https://github.com/lzt404/cpa-plugin-perplexity",
@@ -10,5 +10,11 @@
   "schema_version": 10,
   "sdk_module": "github.com/router-for-me/CLIProxyAPI/v8",
   "sdk_version": "v8.0.61",
-  "platforms": ["linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64"]
+  "platforms": [
+    "linux/amd64",
+    "linux/arm64",
+    "windows/amd64",
+    "darwin/amd64",
+    "darwin/arm64"
+  ]
 }

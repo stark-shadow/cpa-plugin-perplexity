@@ -27,7 +27,7 @@ func TestReleaseMetadataAndPackaging(t *testing.T) {
 		SchemaVersion uint32   `json:"schema_version"`
 		Platforms     []string `json:"platforms"`
 	}
-	if json.Unmarshal(raw, &manifest) != nil || manifest.ID != pluginID || manifest.Version != pluginVersion || manifest.Author != "lzt404" || manifest.Repository != pluginRepo || manifest.ABIVersion != pluginabi.ABIVersion || manifest.SchemaVersion != pluginabi.SchemaVersion || manifest.SDKVersion != "v8.0.61" || len(manifest.Platforms) != 4 {
+	if json.Unmarshal(raw, &manifest) != nil || manifest.ID != pluginID || manifest.Version != pluginVersion || manifest.Author != "lzt404" || manifest.Repository != pluginRepo || manifest.ABIVersion != pluginabi.ABIVersion || manifest.SchemaVersion != pluginabi.SchemaVersion || manifest.SDKVersion != "v8.0.61" || !reflect.DeepEqual(manifest.Platforms, []string{"linux/amd64", "linux/arm64", "windows/amd64", "darwin/amd64", "darwin/arm64"}) {
 		t.Fatal("release metadata drift")
 	}
 	dir := t.TempDir()
@@ -57,7 +57,7 @@ func TestReleaseMetadataAndPackaging(t *testing.T) {
 	if err = os.WriteFile(filepath.Join(stage, "extension", "manifest.json"), []byte(`{"manifest_version":3}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	target := filepath.Join(dir, "plugin.zip")
+	target := filepath.Join(dir, "perplexity_1.1.1_linux_amd64.zip")
 	if output, runErr := exec.Command("python3", "package.py", stage, target).CombinedOutput(); runErr != nil {
 		t.Fatalf("packaging failed: %s", output)
 	}

@@ -18,6 +18,7 @@ jobs:
         include:
           - {runner: ubuntu-latest, goos: linux, goarch: amd64, cc: gcc}
           - {runner: ubuntu-latest, goos: linux, goarch: arm64, cc: aarch64-linux-gnu-gcc}
+          - {runner: ubuntu-latest, goos: windows, goarch: amd64, cc: x86_64-w64-mingw32-gcc}
           - {runner: macos-latest, goos: darwin, goarch: arm64, cc: clang}
           - {runner: macos-latest, goos: darwin, goarch: amd64, cc: clang}
     steps:
@@ -29,6 +30,9 @@ jobs:
       - name: Install cross compiler
         if: matrix.goos == 'linux' && matrix.goarch == 'arm64'
         run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+      - name: Install MinGW for Windows
+        if: matrix.goos == 'windows'
+        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64
       - name: Check release version
         if: startsWith(github.ref, 'refs/tags/v')
         run: python3 -c 'import json, os; assert os.environ["GITHUB_REF_NAME"] == "v" + json.load(open("manifest.json"))["version"]'
@@ -55,8 +59,6 @@ jobs:
           merge-multiple: true
       - name: Checksums
         working-directory: release-assets
-        # Bare file names only: the core plugin store looks the archive up by
-        # name and does not strip a leading "./" from a sha256sum line.
         run: for f in ./*.zip; do sha256sum "$f" | sed "s|  \./|  |"; done > checksums.txt
       - uses: softprops/action-gh-release@v2
         with:

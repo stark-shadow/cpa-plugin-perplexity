@@ -10,7 +10,7 @@ import (
 
 const (
 	pluginID      = "perplexity"
-	pluginVersion = "1.1.0"
+	pluginVersion = "1.1.1"
 	pluginRepo    = "https://github.com/lzt404/cpa-plugin-perplexity"
 	maxRPCPayload = 1 << 20
 )
