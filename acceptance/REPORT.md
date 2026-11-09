@@ -1,7 +1,74 @@
 # Local acceptance report
 
 Date: **2026-11-09**, host platform **linux/amd64**.
-Plugin: `perplexity` **1.0.0**, native ABI **1**, RPC schema **10**.
+Plugin: `perplexity` **1.1.0**, native ABI **1**, RPC schema **10**.
+
+## v1.1.0 cookie-capture login — this run
+
+Implemented real `auth.login.start` / `auth.login.poll`, a public `/login` page,
+and the separately shipped unpacked Chrome/Edge MV3 `extension/`. The existing
+manual paste route is preserved. Login state is a 66-character AES-GCM sealed
+blob with an authenticated purpose, a 16-byte nonce and short expiry; no cookie
+is included. At most 64 flows live in memory, including completed AuthData, and
+restart/shutdown or ten-minute expiry ends them. Import only completes a state
+after session validation and successful host storage. A separate authenticated
+browser polling route returns status/email, never credential storage.
+
+The extension attempts a Bearer-authenticated POST first. A fetch/network/CORS
+failure opens the configured same-origin `/manage` page, with a one-use in-memory
+postMessage handoff checked against source, origin, configured base and state.
+HTTP errors are shown directly; no authentication or CORS policy is weakened.
+Management key/base settings persist in local extension storage; cookies do not.
+The plugin ZIP still contains exactly five root members and no extension files.
+
+The reference `/tmp/omc-ref/go/state.go` **is available for this run**; its compact
+AES-GCM state approach was adapted with a purpose and a process-local key. The
+historical missing-reference notes below describe v1.0.0, not this run.
+The task owner's verified upstream facts were accepted without re-probing or
+reverse engineering: see [LOGIN-EVIDENCE.md](LOGIN-EVIDENCE.md).
+
+Executed locally, hermetically (no live account or upstream HTTP):
+
+- `export PATH=$HOME/.local/go/bin:$PATH; bash build.sh`: full `go test -race -v
+  ./...` reports `PASS` / `ok github.com/lzt404/cpa-plugin-perplexity`, then builds
+  and packages **v1.1.0 linux/amd64**, exit **0**.
+- `node --test extension/tests/*.test.cjs`: 15 passing fake-browser/VM tests,
+  covering cookie selection, state association, host/frame rejection, persisted
+  settings, exact/redacted HTTP errors, CORS fallback, one-use/expired handoffs,
+  same-origin panel import, the content-script hook and manual fallback.
+- Go login tests cover state round-trip/purpose/tampering/length, origin derivation,
+  pending → saved import → repeated success, query/JSON state, rejected conflicts
+  and concurrent imports, failure/retry, storage failure, expiry/restart/eviction,
+  CSP hash authorization and unchanged token/Cookie-header/JSON paste forms.
+- `python3 acceptance/abi_smoke.py dist/1.1.0-linux-amd64/perplexity.so`: **PASS**,
+  including real native ABI login start → pending → fake-host import → success.
+- Archive inspection, `file`, and `nm -D --defined-only`: exactly the five plugin
+  ZIP root members, Linux x86-64 ELF shared library, four required ABI exports.
+- `go test -race -count=3 ./...`, `go vet ./...`, JavaScript syntax checks with
+  `node --check`, `bash -n build.sh`, Python bytecode compilation and
+  `git diff --check` also pass. Go commands use the PATH export shown above.
+
+Exact shared-library build command (exit **0**):
+
+```sh
+CGO_ENABLED=1 go build -trimpath -buildmode=c-shared -o dist/1.1.0-linux-amd64/perplexity.so .
+```
+
+Artifacts: `dist/1.1.0-linux-amd64/perplexity.so`,
+`dist/perplexity_1.1.0_linux_amd64.zip`, `dist/artifacts/checksums.txt`.
+
+**Not run for v1.1.0:** a live signed-in account, actual Chrome/Edge unpacked-load
+and HttpOnly-cookie capture, real CPA/browser CORS behavior, a live login or model
+request, non-linux/amd64 builds, publication, installation, deployment or remote
+push. Browser tests mock extension APIs/DOM; they are not a real-browser result.
+Perplexity does not expose the required public OAuth/device/PKCE credential, so
+that protocol cannot be implemented; this is explicitly a cookie capture/import.
+
+## Historical v1.0.0 record
+
+The remaining sections retain the original v1.0.0 acceptance record. Its extra
+commands, paths and missing references are historical, not claims of rerunning
+those commands for v1.1.0.
 
 ## Scope and missing required references
 

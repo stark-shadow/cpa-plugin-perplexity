@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -22,12 +24,14 @@ func managementRegistration() pluginapi.ManagementRegistrationResponse {
 	return pluginapi.ManagementRegistrationResponse{
 		Routes: []pluginapi.ManagementRoute{
 			{Method: http.MethodPost, Path: managementPrefix + "/auth/import"},
+			{Method: http.MethodGet, Path: managementPrefix + "/auth/login/poll"},
 			{Method: http.MethodGet, Path: managementPrefix + "/auth/status"},
 			{Method: http.MethodPost, Path: managementPrefix + "/auth/test"},
 			{Method: http.MethodGet, Path: managementPrefix + "/catalog"},
 		},
 		Resources: []pluginapi.ResourceRoute{
 			{Path: "/manage", Menu: "Perplexity", Description: "Import and test Perplexity web sessions"},
+			{Path: "/login"},
 			{Path: "/panel.css"}, {Path: "/panel.js"},
 		},
 	}
@@ -68,6 +72,7 @@ func importedCredential(raw []byte) (credential, error) {
 		SessionToken string          `json:"session_token"`
 		Cookies      json.RawMessage `json:"cookies"`
 		Label        string          `json:"label"`
+		State        string          `json:"state"`
 	}
 	if err := decodeManagement(raw, &request); err != nil {
 		return credential{}, err
@@ -169,13 +174,20 @@ func (rt *pluginRuntime) managementHandle(request pluginapi.ManagementRequest, i
 		switch resourcePath {
 		case "/manage":
 			content, contentType = panelHTML, "text/html; charset=utf-8"
+		case "/login":
+			content, contentType = loginHTML, "text/html; charset=utf-8"
 		case "/panel.css":
 			content, contentType = panelCSS, "text/css; charset=utf-8"
 		case "/panel.js":
 			content, contentType = panelJS, "application/javascript; charset=utf-8"
 		}
 		if contentType != "" {
-			return pluginapi.ManagementResponse{StatusCode: 200, Headers: http.Header{"Content-Type": {contentType}, "Cache-Control": {"no-store"}, "X-Content-Type-Options": {"nosniff"}, "Content-Security-Policy": {"default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"}}, Body: []byte(content)}
+			policy := "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+			if resourcePath == "/login" {
+				styleHash, scriptHash := sha256.Sum256([]byte(panelCSS)), sha256.Sum256([]byte(loginJS))
+				policy = "default-src 'self'; style-src 'self' 'sha256-" + base64.StdEncoding.EncodeToString(styleHash[:]) + "'; script-src 'self' 'sha256-" + base64.StdEncoding.EncodeToString(scriptHash[:]) + "'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+			}
+			return pluginapi.ManagementResponse{StatusCode: 200, Headers: http.Header{"Content-Type": {contentType}, "Cache-Control": {"no-store"}, "X-Content-Type-Options": {"nosniff"}, "Referrer-Policy": {"no-referrer"}, "Content-Security-Policy": {policy}}, Body: []byte(content)}
 		}
 	}
 	path := strings.TrimPrefix(request.Path, "/v0/management")
@@ -184,10 +196,32 @@ func (rt *pluginRuntime) managementHandle(request pluginapi.ManagementRequest, i
 	defer cancel()
 	client := sender{callback: callback, id: id, cfg: cfg}
 	switch {
+	case request.Method == http.MethodGet && path == managementPrefix+"/auth/login/poll":
+		result, _ := rt.pollLogin(pluginapi.AuthLoginPollRequest{State: request.Query.Get("state")})
+		return managementJSON(200, map[string]any{"status": result.Status, "message": result.Message, "email": result.Auth.Metadata["email"]})
 	case request.Method == http.MethodPost && path == managementPrefix+"/auth/import":
 		cred, err := importedCredential(request.Body)
 		if err != nil {
 			return managementError(err)
+		}
+		var input struct {
+			State string `json:"state"`
+		}
+		_ = json.Unmarshal(request.Body, &input)
+		queryState := request.Query.Get("state")
+		if len(request.Query["state"]) > 1 || (queryState != "" && input.State != "" && queryState != input.State) {
+			return managementError(pluginabi.NewError("invalid_request", "Conflicting login states", 400))
+		}
+		if input.State == "" {
+			input.State = queryState
+		}
+		var finish func(*pluginapi.AuthData) error
+		if input.State != "" {
+			finish, err = rt.claimLoginImport(input.State)
+			if err != nil {
+				return managementError(err)
+			}
+			defer finish(nil)
 		}
 		validated, err := probeSession(ctx, client, cred)
 		if err != nil {
@@ -200,6 +234,12 @@ func (rt *pluginRuntime) managementHandle(request pluginapi.ManagementRequest, i
 		file, err := saveCredential(ctx, callback, validated)
 		if err != nil {
 			return managementError(err)
+		}
+		if finish != nil {
+			auth := validated.authData()
+			if err := finish(&auth); err != nil {
+				return managementError(err)
+			}
 		}
 		return managementJSON(201, map[string]string{"email": validated.Email, "plan": validated.Plan, "file": file})
 	case request.Method == http.MethodGet && path == managementPrefix+"/auth/status":
@@ -257,12 +297,23 @@ const panelCSS = `:root{color-scheme:light dark;font:16px/1.5 system-ui,sans-ser
 const panelJS = `"use strict";
 const byId = (id) => document.getElementById(id);
 const base = "/v0/management/plugins/perplexity";
-async function api(path, body) {
+const loginState = new URLSearchParams(location.search).get("state") || "";
+async function api(path, body, managementKey) {
   const headers = {"Content-Type":"application/json"};
-  const key = byId("key").value.trim();
+  const key = managementKey === undefined ? byId("key").value.trim() : managementKey;
   if (key) headers.Authorization = "Bearer " + key;
   const response = await fetch(base + path, {method:body ? "POST" : "GET",headers,credentials:"same-origin",cache:"no-store",body:body ? JSON.stringify(body) : undefined});
-  if (!response.ok) throw new Error(response.status === 401 ? "Check your CPA management key." : "Request failed. Check the session and try again.");
+  if (!response.ok) {
+    if (managementKey !== undefined) {
+      const text = await response.text();let result;
+      try { result = JSON.parse(text); } catch (_) { result = null; }
+      const detail = result && (result.error || result.message || result.Message);
+      let message = (typeof detail === "string" ? detail : detail && (detail.message || detail.Message)) || text || ("HTTP " + response.status);
+      for (const secret of [key,body && body.session_token,...Object.values((body && body.cookies) || {})].filter(Boolean).sort((first,second) => second.length - first.length)) message = message.replaceAll(secret,"[redacted]");
+      throw new Error(message);
+    }
+    throw new Error(response.status === 401 ? "Check your CPA management key." : "Request failed. Check the session and try again.");
+  }
   return response.json();
 }
 async function refresh() {
@@ -287,6 +338,31 @@ byId("import").onclick = () => run(async () => {
   let cookies = byId("cookie").value.trim();byId("cookie").value = "";
   if (!cookies) { byId("message").textContent = "Paste a signed-in session first.";return; }
   if (cookies.startsWith("{")) { try { cookies = JSON.parse(cookies); } catch (_) { throw new Error("Invalid cookie JSON."); } }
-  await api("/auth/import",{cookies});cookies = "";byId("message").textContent = "Session imported.";await refresh();
+  const body = {cookies};if (loginState) body.state = loginState;
+  await api("/auth/import",body);cookies = "";byId("message").textContent = "Session imported.";await refresh();
 });
-run(refresh);`
+window.addEventListener("message", (event) => {
+  const data = event.data;
+  if (event.source !== window || event.origin !== location.origin || !data || data.source !== "perplexity-extension") return;
+  if (data.type === "bridge-ready") {
+    window.postMessage({source:"perplexity-page",type:"bridge-ready"},location.origin);return;
+  }
+  if (data.type === "handoff-error") { byId("message").textContent = data.error;return; }
+  if (data.type !== "import" || data.baseOrigin !== location.origin || typeof data.requestId !== "string") return;
+  const reply = (result) => window.postMessage({source:"perplexity-page",type:"import-result",requestId:data.requestId,...result},location.origin);
+  run(async () => {
+    let payload = data.payload;
+    const key = data.managementKey;
+    delete data.payload;delete data.managementKey;
+    if (!payload || (payload.state || "") !== loginState) { reply({ok:false,error:"Login state mismatch."});return; }
+    try {
+      const result = await api("/auth/import",payload,key);
+      payload = null;
+      byId("message").textContent = "已连接 " + (result.email || "Perplexity") + " / " + (result.plan || "unknown");
+      reply({ok:true,email:result.email,plan:result.plan});
+    } catch (error) {
+      payload = null;reply({ok:false,error:error.message});throw error;
+    }
+  });
+});
+if (!location.hash.startsWith("#capture=")) run(refresh);`

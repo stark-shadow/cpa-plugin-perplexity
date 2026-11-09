@@ -3,7 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -30,6 +33,59 @@ type credential struct {
 
 var tokenPattern = regexp.MustCompile(`^[A-Za-z0-9._~%+/\-]{20,}={0,2}$`)
 var cookieNamePattern = regexp.MustCompile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+
+func (rt *pluginRuntime) startLogin(request pluginapi.AuthLoginStartRequest) (pluginapi.AuthLoginStartResponse, error) {
+	base, err := url.Parse(strings.TrimSpace(request.BaseURL))
+	if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.Hostname() == "" || base.User != nil || base.Opaque != "" {
+		return pluginapi.AuthLoginStartResponse{}, pluginabi.NewError("invalid_request", "CPA login base URL must be an HTTP(S) URL without credentials", 400)
+	}
+	rt.rememberHost(request.Host)
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if len(rt.stateKey) == 0 {
+		key := make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			return pluginapi.AuthLoginStartResponse{}, pluginabi.NewError("internal_error", "Unable to initialize login state", 500)
+		}
+		rt.stateKey = key
+	}
+	nonce := make([]byte, 16)
+	if _, err := rand.Read(nonce); err != nil {
+		return pluginapi.AuthLoginStartResponse{}, pluginabi.NewError("internal_error", "Unable to create login state", 500)
+	}
+	expires := time.Now().Add(loginLifetime).Truncate(time.Second)
+	state, err := sealState(rt.stateKey, loginState{Kind: cookieLoginKind, Expires: expires.Unix(), Nonce: nonce})
+	if err != nil {
+		return pluginapi.AuthLoginStartResponse{}, pluginabi.NewError("internal_error", "Unable to seal login state", 500)
+	}
+	rt.cleanupFlowsLocked()
+	for len(rt.pending) >= maxPendingFlows {
+		oldest := ""
+		var earliest int64
+		for key, flow := range rt.pending {
+			if oldest == "" || flow.Expires < earliest {
+				oldest, earliest = key, flow.Expires
+			}
+		}
+		delete(rt.pending, oldest)
+	}
+	rt.pending[hex.EncodeToString(nonce)] = &pendingFlow{Expires: expires.Unix()}
+	loginURL := url.URL{Scheme: base.Scheme, Host: base.Host, Path: "/v0/resource/plugins/perplexity/login", RawQuery: url.Values{"state": {state}}.Encode()}
+	return pluginapi.AuthLoginStartResponse{Provider: pluginID, URL: loginURL.String(), State: state, ExpiresAt: expires}, nil
+}
+
+func (rt *pluginRuntime) pollLogin(request pluginapi.AuthLoginPollRequest) (pluginapi.AuthLoginPollResponse, error) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	flow, err := rt.loginFlowLocked(request.State)
+	if err != nil {
+		return pluginapi.AuthLoginPollResponse{Status: pluginapi.AuthLoginStatusError, Message: loginExpired().Message}, nil
+	}
+	if flow.Auth == nil {
+		return pluginapi.AuthLoginPollResponse{Status: pluginapi.AuthLoginStatusPending}, nil
+	}
+	return pluginapi.AuthLoginPollResponse{Status: pluginapi.AuthLoginStatusSuccess, Auth: *flow.Auth}, nil
+}
 
 func invalidCredential() *pluginabi.Error {
 	return pluginabi.NewError("invalid_credential", "Provide a Perplexity session token or Cookie header containing the signed-in session cookie", 400)

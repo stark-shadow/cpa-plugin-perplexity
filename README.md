@@ -12,7 +12,8 @@ It is not the Perplexity API (Sonar) and does not use API keys or browser OAuth.
   sampling controls (`temperature`, `max_tokens`), and cross-request thread continuation
   are not supported; accepted sampling fields do not change the upstream web request.
 - Catalog discovery with a six-hour memory/disk cache and four shipped fallback models.
-- Session-cookie import, validity checks, refresh probes, normalized quota metrics.
+- Codex-style browser login via a companion cookie-capture extension, plus unchanged
+  manual session-cookie import, validity checks, refresh probes and quota metrics.
 - Browser-like headers and the host's standard HTTP transport; **no TLS fingerprint library**.
 - Usage and token counting are **estimates: ceil(Unicode characters / 4)**, not billing data.
   `executor.count_tokens` puts `{input_tokens: N}` in the SDK executor response payload
@@ -60,7 +61,50 @@ are accepted. `max_prompt_chars` must fit the 17-character truncation marker (mi
 `base_url` must be an HTTP(S) URL with a host, without userinfo/query/fragment; a mirror path prefix is allowed.
 Point mirrors only at trusted servers: requests carry the account cookie.
 
-## Import a signed-in session
+## Browser login (v1.1.0)
+
+Perplexity offers **no public OAuth client credential**, device-code endpoint or
+PKCE/redirect-URI flow. The desktop app is a ToDesktop wrapper of the same website.
+Its session cookie is **HttpOnly**, so neither page JavaScript nor a bookmarklet can
+capture it. The JWT-to-cookie endpoint requires a **server-only internal secret**;
+it is not a public login API. Cookie capture is the only available route for this
+Codex-like experience, not an OAuth implementation. See the supplied verified
+[device endpoint evidence](acceptance/LOGIN-EVIDENCE.md#no-device-endpoint-or-oauth-client),
+[HttpOnly evidence](acceptance/LOGIN-EVIDENCE.md#httponly-session-cookie), and
+[internal-secret evidence](acceptance/LOGIN-EVIDENCE.md#server-only-internal-secret).
+
+1. In Chrome/Edge, open `chrome://extensions` / `edge://extensions`, enable Developer
+   mode, choose **Load unpacked**, and select this repository's `extension/` folder.
+   The extension ships from the repository, **not in the plugin ZIP**.
+2. Configure the CPA origin (default `http://127.0.0.1:8317`) and management key in
+   the extension popup. These two settings persist in local extension storage;
+   protect your browser profile. The supplied extension supports HTTP loopback
+   `127.0.0.1` / `localhost` origins, not remote CPA instances.
+3. Start Perplexity login in CPA. The plugin derives the origin from the host's
+   callback URL and opens `/v0/resource/plugins/perplexity/login?state=…`.
+   If you just installed the extension, refresh this page. Enter the management key,
+   click **打开 Perplexity 登录**, sign in, then **我已登录，捕获会话**.
+4. The page polls every two seconds and shows **已连接 &lt;email&gt;** before trying
+   to close; if the browser disallows closing, it leaves the success message visible.
+   Alternatively, keep the login tab active and click **捕获并导入** in the popup.
+   Capturing from another tab imports the account without associating a login flow.
+
+Login state is sealed, purpose-bound, under CPA's 128-character limit, contains no
+credential, and expires after ten minutes. At most 64 pending/completed flows stay
+in memory. Restarting the plugin expires unfinished flows rather than resuming them.
+`auth.login.poll` returns pending until a successful state-associated import is saved,
+then returns the internal AuthData to CPA. The page polls a separate authenticated,
+sanitized status route which never returns credential storage.
+
+The service worker first tries an authenticated POST. If CORS/network restrictions
+block the fetch, it opens the configured CPA `/manage` page and relays the cookie
+through a one-use, in-memory content-script `postMessage` handoff. That page verifies
+the source/origin/base/state and imports with a same-origin authenticated request.
+Cookies and management keys never enter a URL; CPA authentication is **not weakened**.
+HTTP errors are shown directly. Fallback results appear in the newly opened tab.
+See [extension installation, transport and security](extension/README.md).
+
+## Manual import (unchanged)
 
 Open `/v0/resource/plugins/perplexity/manage` on the CPA host. This static panel is public,
 but all of its management operations require normal CPA management authentication.
@@ -71,9 +115,10 @@ Sign in to `perplexity.ai` in your browser. In DevTools → Application → Cook
 or a JSON cookie object into the panel. It clears the textarea before sending and never
 prints the token back. Do not send cookies through chat, screenshots, logs or issue reports.
 
-`auth.login.start` deliberately returns `unsupported_operation` (501): server-side OAuth
-cannot capture the browser cookie. Import is the actual sign-in path. Sessions are refreshed
-by probing `/api/auth/session`, not by minting new tokens. Expired sessions need re-import.
+The login page links to this manual fallback with its state preserved; paste import
+then completes the same login flow. Standalone paste import needs no state. Sessions
+are refreshed by probing `/api/auth/session`, not by minting new tokens. Expired
+sessions need re-import. The cookie is a **full account credential**, like a password.
 
 ## Management API
 
@@ -81,7 +126,8 @@ All paths below require CPA management authentication under `/v0/management`:
 
 | Method | Path | Body / result |
 | --- | --- | --- |
-| POST | `/plugins/perplexity/auth/import` | `{session_token?, cookies?, label?}` → 201 `{email, plan, file}` |
+| POST | `/plugins/perplexity/auth/import` | `{session_token?, cookies?, label?, state?}` → 201 `{email, plan, file}`; also accepts `?state=…` |
+| GET | `/plugins/perplexity/auth/login/poll?state=…` | `{status, message, email}`; no credential data |
 | GET | `/plugins/perplexity/auth/status` | `{accounts:[{file,email,plan,validated_at,valid}]}` |
 | POST | `/plugins/perplexity/auth/test` | `{file}` → one account validity record |
 | GET | `/plugins/perplexity/catalog` | `{tier, models}` |
@@ -94,8 +140,9 @@ Remove accounts through CPA auth-file management; no plugin DELETE route is prov
 Each validity probe has an eight-second timeout; one failed probe does not fail the status
 response. `valid: false` can mean expired **or temporarily unreachable**, not proof of expiry.
 
-Static browser resources `/manage`, `/panel.css`, `/panel.js` live under
-`/v0/resource/plugins/perplexity/`, with no CDN or external scripts.
+Static browser resources `/login`, `/manage`, `/panel.css`, `/panel.js` live under
+`/v0/resource/plugins/perplexity/`, with no CDN or external scripts. The self-contained
+login HTML uses hash-authorized inline CSS/JS; neither page enables unsafe inline scripts.
 
 ## Models and execution
 
@@ -140,9 +187,10 @@ invented. These configured denominators are operator assumptions, not upstream p
 ```sh
 export PATH="$HOME/.local/go/bin:$PATH"
 bash build.sh
-# dist/1.0.0-linux-amd64/perplexity.so
+# dist/1.1.0-linux-amd64/perplexity.so
 go test -race -v ./...
-python3 acceptance/abi_smoke.py dist/1.0.0-linux-amd64/perplexity.so
+node --test extension/tests/*.test.cjs
+python3 acceptance/abi_smoke.py dist/1.1.0-linux-amd64/perplexity.so
 ```
 
 `build.sh` runs hermetic race tests first, then

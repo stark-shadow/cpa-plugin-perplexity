@@ -51,6 +51,12 @@ func TestReleaseMetadataAndPackaging(t *testing.T) {
 	if err = os.WriteFile(filepath.Join(stage, "must-not-package.h"), []byte("extra"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	if err = os.Mkdir(filepath.Join(stage, "extension"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(stage, "extension", "manifest.json"), []byte(`{"manifest_version":3}`), 0600); err != nil {
+		t.Fatal(err)
+	}
 	target := filepath.Join(dir, "plugin.zip")
 	if output, runErr := exec.Command("python3", "package.py", stage, target).CombinedOutput(); runErr != nil {
 		t.Fatalf("packaging failed: %s", output)

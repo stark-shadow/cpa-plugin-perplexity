@@ -43,6 +43,7 @@ def main() -> None:
     libc.free.argtypes = [ctypes.c_void_p]
     frees = []
     callbacks = []
+    saved = {}
 
     @HostCall
     def host_call(_ctx, method, request, length, out):
@@ -53,9 +54,17 @@ def main() -> None:
             result = {"operation_id": "smoke-operation"}
         elif method == "host.http.do":
             wire = json.loads(ctypes.string_at(request, length))
-            assert "/rest/models/config/v2?version=2.18&source=default" in wire["request"]["URL"]
-            body = json.dumps({"models": {"smoke_model": {"label": "Smoke", "mode": "search"}}}).encode()
+            url = wire["request"]["URL"]
+            if url.endswith("/api/auth/session"):
+                body = json.dumps({"user": {"id": "smoke-account", "email": "smoke@example.invalid", "subscription_tier": "pro"}}).encode()
+            else:
+                assert "/rest/models/config/v2?version=2.18&source=default" in url
+                body = json.dumps({"models": {"smoke_model": {"label": "Smoke", "mode": "search"}}}).encode()
             result = {"StatusCode": 200, "Body": base64.b64encode(body).decode()}
+        elif method == "host.auth.save":
+            wire = json.loads(ctypes.string_at(request, length))
+            saved[wire["name"]] = wire["json"]
+            result = {"name": wire["name"]}
         elif method != "host.http.cancel":
             raise AssertionError("unexpected host RPC")
         encoded = json.dumps({"ok": True, "result": result}).encode()
@@ -110,12 +119,27 @@ def main() -> None:
     assert response["ok"] and len(response["result"]["Models"]) == 5
     assert len(frees) == len(callbacks) == 3
     response = invoke("auth.login.start")
-    assert not response["ok"] and response["error"]["http_status"] == 501
+    assert not response["ok"] and response["error"]["http_status"] == 400
+    response = invoke("auth.login.start", json.dumps({"BaseURL": "http://127.0.0.1:8317/v0/management/oauth/callback"}).encode())
+    assert response["ok"]
+    state = response["result"]["State"]
+    assert len(state) <= 128
+    assert response["result"]["URL"] == "http://127.0.0.1:8317/v0/resource/plugins/perplexity/login?state=" + state
+    response = invoke("auth.login.poll", json.dumps({"State": state}).encode())
+    assert response["ok"] and response["result"]["Status"] == "pending"
+    token = "hermetic-smoke-session-000000000000000000"
+    body = json.dumps({"session_token": token, "state": state}).encode()
+    response = invoke("management.handle", json.dumps({"Method": "POST", "Path": "/v0/management/plugins/perplexity/auth/import", "Body": base64.b64encode(body).decode()}).encode())
+    assert response["ok"] and response["result"]["StatusCode"] == 201
+    assert token not in base64.b64decode(response["result"]["Body"]).decode()
+    response = invoke("auth.login.poll", json.dumps({"State": state}).encode())
+    assert response["ok"] and response["result"]["Status"] == "success"
+    assert response["result"]["Auth"]["Label"] == "smoke@example.invalid" and len(saved) == 1
     response = invoke("unsupported")
     assert not response["ok"] and response["error"]["code"] == "method_not_found"
     api.shutdown()
     api.shutdown()
-    print("PASS: C ABI exports, init validation, 1 MiB boundary, strict registration, host bridge/free, model catalog, shutdown (hermetic)")
+    print("PASS: C ABI exports, init validation, 1 MiB boundary, strict registration, host bridge/free, model catalog, login pending/import/success, shutdown (hermetic)")
 
 
 if __name__ == "__main__":

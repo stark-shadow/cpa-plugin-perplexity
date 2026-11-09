@@ -13,6 +13,7 @@
     {"case": "quota", "status": "pass", "evidence": ["TestQuotaNormalizationAndFetch", "TestSDKRPCResponseShapes"], "live": "not_run"}
   ],
   "additional_checks": [
+    {"case": "cookie_capture_login", "status": "pass", "evidence": ["login_test.go", "extension/tests/capture.test.cjs", "acceptance/abi_smoke.py"], "live": "not_run"},
     {"case": "release_packaging", "status": "pass", "evidence": ["TestReleaseMetadataAndPackaging", "build.sh", "ZIP root inspection"]},
     {"case": "concurrency_and_cancellation", "status": "pass", "evidence": ["TestConcurrencyLimitAndCancellation", "TestTransportOperationCancellation", "TestQuiesceDrainsUnaryRPC"]},
     {"case": "native_abi", "status": "pass", "evidence": ["acceptance/abi_smoke.py", "nm -D --defined-only", "file"]}

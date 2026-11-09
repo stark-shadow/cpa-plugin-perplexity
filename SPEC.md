@@ -211,10 +211,18 @@ Quota mapping (`QuotaFetchResponse`):
 
 ### 3.1 Sign-in
 CPA's browser OAuth cannot capture a cookie server-side, so:
-- `auth.login.start` returns a clear error (`unsupported_operation`, 501) with the
-  message that Perplexity sign-in is done by importing a session cookie in the
-  plugin panel. This is the codex-pat precedent; it is acceptable and honest.
-- The real path is the management API import route (§5).
+- v1.1.0 supersedes the original unsupported-login behavior with a companion MV3
+  extension using `chrome.cookies`, not OAuth/PKCE. See
+  `acceptance/LOGIN-EVIDENCE.md` for the supplied upstream evidence.
+- `auth.login.start` derives the core origin from `BaseURL` and returns the plugin
+  `/login?state=…` page. State is purpose-bound, sealed, under 128 characters, and
+  contains only a 16-byte flow nonce and expiry, never a cookie.
+- `auth.login.poll` remains pending until the authenticated import route validates
+  and saves the session with that state, then returns AuthData. Flows live only in
+  bounded process memory, expire after ten minutes, and do not survive a restart.
+- Manual paste import remains unchanged. The extension is shipped from `extension/`
+  separately, never in the five-member plugin ZIP. Direct authenticated fetch falls
+  back to a checked, same-origin `/manage` postMessage import when fetch is blocked.
 
 ### 3.2 Parse / refresh
 - `auth.parse`: recognize `"type":"perplexity"` (or a bare token when the file is
@@ -268,11 +276,14 @@ sends a prefixed alias.
 
 Register under `/v0/management` (paths relative, plugin prefix included):
 - `POST /plugins/perplexity/auth/import`
-  body `{"session_token":"...", "cookies":"name=value; ...", "label":"optional"}`
+  body `{"session_token":"...", "cookies":"name=value; ...", "label":"optional", "state":"optional"}`
+  (or a `?state=` query; conflicting states are rejected)
   → validate against `/api/auth/session` → persist via
   `host.auth.save` (`{"name":"perplexity-<hash>.json","json":<credential>}`) →
   `201` with `{email, plan, file}`. Invalid session → `400` with a message that
   says the cookie is not a signed-in Perplexity session. Token never echoed.
+- `GET /plugins/perplexity/auth/login/poll?state=…` → sanitized
+  `{status, message, email}` for the browser; normal management authentication.
 - `GET /plugins/perplexity/auth/status`
   → `{"accounts":[{"file","email","plan","validated_at","valid"}]}` (live probe,
   8s timeout, never fails the whole request).
@@ -281,6 +292,9 @@ Register under `/v0/management` (paths relative, plugin prefix included):
 - `DELETE` is out of scope for v1; removal stays a normal CPA auth-file delete.
 
 Browser resources (`/v0/resource/plugins/perplexity/`), unauthenticated:
+- `/login` — self-contained extension setup/capture page, management key field,
+  Perplexity login button, manual fallback preserving state, two-second status
+  polling and a connected-email success message. CSP hashes authorize inline CSS/JS.
 - `/manage` — small self-contained HTML panel (inline CSS/JS, no external CDN):
   a textarea for the cookie, an Import button, a table of accounts with
   Valid/Expired state and a Test button, and a note explaining how to copy the

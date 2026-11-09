@@ -215,7 +215,7 @@ func TestRegistrationAndDispatch(t *testing.T) {
 		}
 	}
 	_, err := rt.dispatch(pluginabi.MethodAuthLoginStart, nil, host.call)
-	errorDetail(t, err, "unsupported_operation", 501)
+	errorDetail(t, err, "invalid_request", 400)
 	_, err = rt.dispatch("not-a-method", nil, host.call)
 	errorDetail(t, err, "method_not_found", 404)
 	_, err = rt.dispatch(pluginabi.MethodExecutorExecute, []byte("[]"), host.call)
@@ -765,7 +765,7 @@ func TestManagementImportStatusAndRefresh(t *testing.T) {
 	rt := testRuntime(t)
 	host := newFakeHost()
 	registration := managementRegistration()
-	if len(registration.Routes) != 4 || len(registration.Resources) != 3 {
+	if len(registration.Routes) != 5 || len(registration.Resources) != 4 {
 		t.Fatal("route contract mismatch")
 	}
 	for _, route := range registration.Routes {

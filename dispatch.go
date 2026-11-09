@@ -10,7 +10,7 @@ import (
 
 const (
 	pluginID      = "perplexity"
-	pluginVersion = "1.0.0"
+	pluginVersion = "1.1.0"
 	pluginRepo    = "https://github.com/lzt404/cpa-plugin-perplexity"
 	maxRPCPayload = 1 << 20
 )
@@ -95,8 +95,20 @@ func (rt *pluginRuntime) dispatch(method string, raw []byte, callback hostCallba
 		return struct{}{}, nil
 	case pluginabi.MethodAuthIdentifier, pluginabi.MethodExecutorIdentifier, pluginabi.MethodQuotaIdentifier:
 		return map[string]any{"identifier": pluginID, "credential_providers": []string{pluginID}}, nil
-	case pluginabi.MethodAuthLoginStart, pluginabi.MethodAuthLoginPoll, pluginabi.MethodQuotaReset, pluginabi.MethodExecutorHTTPRequest:
-		return nil, pluginabi.NewError("unsupported_operation", "Perplexity sign-in requires importing a session cookie in the plugin panel at /v0/resource/plugins/perplexity/manage; quota reset and arbitrary HTTP are not supported", 501)
+	case pluginabi.MethodAuthLoginStart:
+		var request pluginapi.AuthLoginStartRequest
+		if err := decodeRPC(raw, &request); err != nil {
+			return nil, err
+		}
+		return rt.startLogin(request)
+	case pluginabi.MethodAuthLoginPoll:
+		var request pluginapi.AuthLoginPollRequest
+		if err := decodeRPC(raw, &request); err != nil {
+			return nil, err
+		}
+		return rt.pollLogin(request)
+	case pluginabi.MethodQuotaReset, pluginabi.MethodExecutorHTTPRequest:
+		return nil, pluginabi.NewError("unsupported_operation", "Perplexity quota reset and arbitrary HTTP are not supported", 501)
 	case pluginabi.MethodAuthParse:
 		var request pluginapi.AuthParseRequest
 		if err := decodeRPC(raw, &request); err != nil {

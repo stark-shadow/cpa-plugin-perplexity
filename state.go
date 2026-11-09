@@ -2,9 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -29,11 +35,13 @@ type pluginRuntime struct {
 	workers     sync.WaitGroup
 	catalogMu   sync.Mutex
 	lifecycleMu sync.Mutex
+	stateKey    []byte
+	pending     map[string]*pendingFlow
 }
 
 func newRuntime() *pluginRuntime {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &pluginRuntime{cfg: defaultSettings(), ctx: ctx, cancel: cancel, active: map[string]int{}, changed: make(chan struct{})}
+	return &pluginRuntime{cfg: defaultSettings(), ctx: ctx, cancel: cancel, active: map[string]int{}, changed: make(chan struct{}), pending: map[string]*pendingFlow{}}
 }
 
 var runtime = newRuntime()
@@ -79,6 +87,8 @@ func (rt *pluginRuntime) stop() {
 	rt.mu.Lock()
 	rt.closed = true
 	rt.cancel()
+	rt.stateKey = nil
+	clear(rt.pending)
 	rt.mu.Unlock()
 	rt.workers.Wait()
 }
@@ -147,6 +157,134 @@ func tokenHash(token string) string {
 }
 
 func credentialName(token string) string { return "perplexity-" + tokenHash(token)[:12] + ".json" }
+
+const (
+	maxStateLength  = 128
+	maxPendingFlows = 64
+	cookieLoginKind = byte(1)
+	loginLifetime   = 10 * time.Minute
+)
+
+type loginState struct {
+	Kind    byte
+	Expires int64
+	Nonce   []byte
+}
+
+type pendingFlow struct {
+	Expires   int64
+	Auth      *pluginapi.AuthData
+	Importing bool
+}
+
+func sealState(key []byte, state loginState) (string, error) {
+	if state.Kind == 0 || len(state.Nonce) != 16 || state.Expires <= 0 || state.Expires > 1<<32-1 {
+		return "", errors.New("invalid login state")
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", errors.New("cannot generate login state")
+	}
+	plain := make([]byte, 21)
+	plain[0] = state.Kind
+	binary.BigEndian.PutUint32(plain[1:5], uint32(state.Expires))
+	copy(plain[5:], state.Nonce)
+	sealed := gcm.Seal(nonce, nonce, plain, []byte("perplexity-state-v1"))
+	encoded := base64.RawURLEncoding.EncodeToString(sealed)
+	if len(encoded) > maxStateLength {
+		return "", errors.New("login state exceeds CPA limit")
+	}
+	return encoded, nil
+}
+
+func openState(key []byte, encoded string) (loginState, error) {
+	var state loginState
+	if len(encoded) > maxStateLength {
+		return state, errors.New("invalid login state")
+	}
+	raw, err := base64.RawURLEncoding.Strict().DecodeString(encoded)
+	if err != nil || len(raw) != 12+21+16 {
+		return state, errors.New("invalid login state")
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return state, err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return state, err
+	}
+	plain, err := gcm.Open(nil, raw[:12], raw[12:], []byte("perplexity-state-v1"))
+	if err != nil || len(plain) != 21 || plain[0] == 0 {
+		return state, errors.New("invalid login state")
+	}
+	return loginState{Kind: plain[0], Expires: int64(binary.BigEndian.Uint32(plain[1:5])), Nonce: append([]byte(nil), plain[5:]...)}, nil
+}
+
+func loginExpired() *pluginabi.Error {
+	return pluginabi.NewError("login_expired", "Perplexity login expired or the plugin restarted; start a new login", 410)
+}
+
+func (rt *pluginRuntime) cleanupFlowsLocked() {
+	for nonce, flow := range rt.pending {
+		if flow.Expires <= time.Now().Unix() {
+			delete(rt.pending, nonce)
+		}
+	}
+}
+
+func (rt *pluginRuntime) loginFlowLocked(encoded string) (*pendingFlow, error) {
+	rt.cleanupFlowsLocked()
+	state, err := openState(rt.stateKey, encoded)
+	if err != nil || state.Kind != cookieLoginKind || state.Expires <= time.Now().Unix() {
+		return nil, loginExpired()
+	}
+	flow := rt.pending[hex.EncodeToString(state.Nonce)]
+	if flow == nil || flow.Expires != state.Expires {
+		return nil, loginExpired()
+	}
+	return flow, nil
+}
+
+func (rt *pluginRuntime) claimLoginImport(encoded string) (func(*pluginapi.AuthData) error, error) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	flow, err := rt.loginFlowLocked(encoded)
+	if err != nil {
+		return nil, err
+	}
+	if flow.Auth != nil || flow.Importing {
+		return nil, pluginabi.NewError("login_conflict", "This login is already complete or an import is in progress", 409)
+	}
+	flow.Importing = true
+	var once sync.Once
+	var result error
+	return func(auth *pluginapi.AuthData) error {
+		once.Do(func() {
+			rt.mu.Lock()
+			defer rt.mu.Unlock()
+			flow.Importing = false
+			if auth == nil {
+				return
+			}
+			current, err := rt.loginFlowLocked(encoded)
+			if err != nil || current != flow {
+				result = loginExpired()
+				return
+			}
+			flow.Auth = auth
+		})
+		return result
+	}, nil
+}
 
 func saveCredential(ctx context.Context, callback hostCallbackFunc, cred credential) (string, error) {
 	raw, _ := json.Marshal(cred)
